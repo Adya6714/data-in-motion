@@ -130,4 +130,3 @@ docker compose up -d --build
 
 ## Documentation
 *   **[Running Guide](RUNNING_GUIDE.md)**: Detailed step-by-step instructions for verification.
-*   **[Architecture](ARCHITECTURE.md)**: Deep dive into the system components.
