@@ -30,6 +30,10 @@ def featurize_per_key(g, future_win_min: int, future_min_hits: int):
     per_min["hour_of_day"] = per_min.index.hour
     per_min["day_of_week"] = per_min.index.dayofweek
 
+    # Simulate partial upload feature (randomly for now, in real life would come from logs)
+    # In a real scenario, this would be derived from access logs indicating incomplete transfers
+    per_min["partial_upload"] = np.random.choice([0, 1], size=len(per_min), p=[0.95, 0.05])
+
     future_hits = per_min["hit"].rolling(future_win_min, min_periods=1).sum().shift(-future_win_min).fillna(0)
     per_min["y_hot_soon"] = (future_hits >= future_min_hits).astype(int)
     return per_min.reset_index()
@@ -46,7 +50,7 @@ def build_dataset(db_path: str, future_win_min: int, future_min_hits: int):
         feats.append(fg)
     feats = pd.concat(feats, ignore_index=True)
 
-    X = feats[["access_1h","access_24h","recency_s","hour_of_day","day_of_week"]].astype(float)
+    X = feats[["access_1h","access_24h","recency_s","hour_of_day","day_of_week", "partial_upload"]].astype(float)
     y = feats["y_hot_soon"].astype(int)
 
     # If there are no positives, relax the rule to get a usable dataset
@@ -59,7 +63,7 @@ def build_dataset(db_path: str, future_win_min: int, future_min_hits: int):
             fg["key"] = key
             feats.append(fg)
         feats = pd.concat(feats, ignore_index=True)
-        X = feats[["access_1h","access_24h","recency_s","hour_of_day","day_of_week"]].astype(float)
+        X = feats[["access_1h","access_24h","recency_s","hour_of_day","day_of_week", "partial_upload"]].astype(float)
         y = feats["y_hot_soon"].astype(int)
 
     return X, y

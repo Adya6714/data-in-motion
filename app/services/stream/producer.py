@@ -36,7 +36,7 @@ async def main():
         bootstrap_servers=KAFKA_BOOTSTRAP,
         acks="all",
         enable_idempotence=True,
-        transactional_id="dim-producer",
+        transactional_id=f"dim-producer-{uuid4()}",
     )
     await producer.start()
     try:

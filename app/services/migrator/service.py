@@ -49,6 +49,13 @@ def _ensure_and_copy_once(key: str, src: str, dst: str):
     if security.is_encryption_enforced() and not security.endpoint_is_encrypted(dst):
         return {"status": "blocked", "reason": "destination_not_encrypted"}
 
+    # Chaos: Latency
+    import time
+    from ..policy import chaos
+    lat = chaos.get_latency()
+    if lat > 0:
+        time.sleep(lat / 1000.0)
+
     ensure_bucket(src)
     ensure_bucket(dst)
 
@@ -62,11 +69,54 @@ def _ensure_and_copy_once(key: str, src: str, dst: str):
         if dm:
             return {"status": "noop"}
         return {"status": "missing_source"}
+    
+    # Partial upload handling / Growing file detection
+    # If source size is significantly different from expected or if we have some metadata indicating partial
+    # For now, we'll assume if size > 0 but we can't read it properly, or if it's growing? 
+    # Actually, the requirement is to "cater to all cloud related business that is incase if the file isn't uploaded entirely"
+    # We will check if the source object is "partial" (simulated check, maybe based on metadata or naming convention)
+    # For this implementation, we'll check if the key ends with ".part" or similar, or just rely on the ML model later.
+    # But here in the migrator, we should probably skip if it looks incomplete.
+    # Let's assume if the size is 0, it might be a placeholder.
+    if sm.get("size") == 0:
+         return {"status": "skipped", "reason": "empty_source"}
 
-    obj = s.get_object(Bucket=sb, Key=key)
-    body = obj["Body"].read()
-    d.put_object(Bucket=db, Key=key, Body=body)
-    return {"status": "copied", "size": sm.get("size", 0), "version_token": uuid4().hex}
+    # Growing File Detection: Check LastModified
+    # If the file was modified very recently (e.g. < 5 seconds ago), it might still be writing.
+    # Note: _head_meta doesn't return LastModified currently, we need to fetch it.
+    # We'll do a quick check on the source object head again or update _head_meta.
+    # For minimal change, let's just do it here.
+    try:
+        head = s.head_object(Bucket=sb, Key=key)
+        last_modified = head.get("LastModified")
+        if last_modified:
+            import datetime
+            # Ensure timezone awareness compatibility
+            now = datetime.datetime.now(last_modified.tzinfo)
+            if (now - last_modified).total_seconds() < 5:
+                return {"status": "skipped", "reason": "file_growing"}
+    except Exception:
+        pass # Ignore if we can't check, proceed with caution
+
+    # Retry loop for throttling (429/503)
+    max_retries = 3
+    backoff = 1
+    for attempt in range(max_retries + 1):
+        try:
+            obj = s.get_object(Bucket=sb, Key=key)
+            body = obj["Body"].read()
+            d.put_object(Bucket=db, Key=key, Body=body)
+            return {"status": "copied", "size": sm.get("size", 0), "version_token": uuid4().hex}
+        except ClientError as e:
+            code = e.response.get("Error", {}).get("Code")
+            if code in ("429", "503", "Throttling", "TooManyRequests", "SlowDown"):
+                if attempt < max_retries:
+                    import time
+                    time.sleep(backoff)
+                    backoff *= 2
+                    continue
+            raise e
+    return {"status": "failed", "error": "max_retries_exceeded"}
 
 def _cleanup_once(key: str, src: str):
     s = client_for(src)

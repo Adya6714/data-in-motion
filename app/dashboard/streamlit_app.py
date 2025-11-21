@@ -4,6 +4,7 @@ import requests
 import pandas as pd
 import streamlit as st
 import plotly.express as px
+import time
 from typing import Any, Dict, List
 
 API = os.getenv("API_URL", "http://localhost:8000")
@@ -334,13 +335,20 @@ def main():
         for ep in endpoints or []:
             lock = "🔒" if ep.get("encrypted", True) else "🔓"
             st.caption(f"{lock} {ep['name']} ({ep.get('latency_ms', '?')} ms / ${ep.get('cost_per_gb', '?')}/GB)")
-        auto_refresh_enabled = st.checkbox("Auto refresh every 5s", value=True, key="auto_refresh_toggle")
-
-    if auto_refresh_enabled:
-        st.markdown(
-            f"<meta http-equiv='refresh' content='{max(1, AUTO_REFRESH_MS // 1000)}'>",
-            unsafe_allow_html=True,
+        
+        # Initialize session state for pause_refresh if not exists
+        if "pause_refresh" not in st.session_state:
+            st.session_state.pause_refresh = False
+        
+        pause_refresh = st.checkbox(
+            "Pause auto-refresh",
+            value=st.session_state.pause_refresh,
+            key="pause_refresh_toggle",
+            help="Check to pause automatic dashboard refresh while presenting."
         )
+        
+        # Update session state when checkbox changes
+        st.session_state.pause_refresh = pause_refresh
 
     st.caption(f"{len(df)} datasets • {sum(1 for x in tasks if x['status']=='queued')} queued migrations")
     render_inventory(df)
@@ -358,15 +366,13 @@ def main():
     migrator_fast_forward()
     render_tasks(tasks)
     advanced_migration_section(endpoints or [])
-    if auto_refresh_enabled:
-        st.markdown(
-            f"""
-            <script>
-            setTimeout(function(){{window.location.reload();}}, {AUTO_REFRESH_MS});
-            </script>
-            """,
-            unsafe_allow_html=True,
-        )
+    
+    # Auto-refresh logic at the end (only if not paused)
+    # Use Streamlit's rerun with a delay to preserve session state
+    if not st.session_state.get("pause_refresh", False):
+        # Small delay then rerun - this preserves session state unlike meta refresh
+        time.sleep(AUTO_REFRESH_MS / 1000.0)
+        st.rerun()
 
 
 if __name__ == "__main__":

@@ -29,3 +29,13 @@ def recover_endpoint(name: str) -> List[str]:
 def clear_failures() -> List[str]:
     settings.set_setting(FAIL_KEY, "")
     return []
+
+
+LATENCY_KEY = "chaos_latency_ms"
+
+def get_latency() -> int:
+    return settings.get_int(LATENCY_KEY) or 0
+
+def set_latency(ms: int) -> int:
+    settings.set_setting(LATENCY_KEY, str(ms))
+    return ms

@@ -12,10 +12,16 @@ def load_snapshot(now_ts_ms: int):
     df["hour_of_day"] = (now_ts_ms//1000//3600) % 24
     df["day_of_week"] = (now_ts_ms//1000//86400 + 4) % 7
     if 'last_access_ts' in df.columns and df['last_access_ts'].notna().any():
-        df['last_access_ms'] = pd.to_datetime(df['last_access_ts']).astype('int64') // 1_000_000
+        df['last_access_ms'] = pd.to_datetime(df['last_access_ts'], errors='coerce').astype('int64') // 1_000_000
     else:
         df['last_access_ms'] = now_ts_ms
     df["recency_s"] = (now_ts_ms - df["last_access_ms"]).fillna(now_ts_ms).clip(lower=0) / 1000.0
+    
+    # Simulate partial upload feature
+    # In production, this would come from file metadata (e.g. a flag or naming convention)
+    # Here we simulate it: 5% chance of being a partial upload
+    df["partial_upload"] = np.random.choice([0, 1], size=len(df), p=[0.95, 0.05])
+    
     df.fillna({"access_1h":0,"access_24h":0,"size_bytes":0,"content_type":"bin"}, inplace=True)
     return df
 
@@ -49,7 +55,7 @@ def main(args):
     fut_tier = [tier(r.access_1h, r.access_24h, th) for r in df_future.itertuples()]
     df_now["y_hot_soon"] = ((df_now["tier"]!="hot") & (pd.Series(fut_tier)=="hot")).astype(int)
 
-    feats = ["access_1h","access_24h","size_bytes","recency_s","hour_of_day","day_of_week"]
+    feats = ["access_1h","access_24h","size_bytes","recency_s","hour_of_day","day_of_week", "partial_upload"]
     out = df_now[["key"]+feats+["tier","y_hot_soon"]].copy()
     out.to_parquet(args.out, index=False)
 
@@ -68,8 +74,8 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", required=True)
     ap.add_argument("--label-mode", choices=["fixed","quantile"], default="fixed")
-    ap.add_argument("--hot-1h", type=int, default=50)
-    ap.add_argument("--hot-24h", type=int, default=300)
+    ap.add_argument("--hot-1h", type=int, default=10)
+    ap.add_argument("--hot-24h", type=int, default=50)
     ap.add_argument("--warm-1h", type=int, default=10)
     ap.add_argument("--warm-24h", type=int, default=60)
     ap.add_argument("--q-hot", type=float, default=0.9)

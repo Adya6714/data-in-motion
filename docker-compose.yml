@@ -87,6 +87,8 @@ services:
     environment:
       - PYTHONPATH=/app
       - API_URL=http://api:8000
+    volumes:
+      - ./app:/app/app
     ports:
       - "8050:8050"
     depends_on:
@@ -111,6 +113,7 @@ services:
     volumes:
       - state:/app/data
       - ./app/models:/app/models
+      - ./app:/app/app
     
   optimizer_cron:
     build: .
@@ -126,6 +129,7 @@ services:
     volumes:
       - state:/app/data
       - ./app/models:/app/models
+      - ./app:/app/app
 
   prometheus:
     image: prom/prometheus:v2.53.0

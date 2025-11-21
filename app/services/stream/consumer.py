@@ -26,7 +26,7 @@ async def consume():
             rec = msg.value
             key = rec.get("key")
             now = datetime.fromtimestamp(
-                rec.get("ts", datetime.now().timestamp()), tz=timezone.utc
+            rec.get("ts", datetime.now().timestamp()) / 1000.0, tz=timezone.utc
             )
             if not key:
                 await consumer.commit()
